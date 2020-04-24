@@ -134,7 +134,7 @@ def runFPGAConvolution(inputStreamFileName="uart_input_bytes.txt", cs_FileName="
     os.system('powershell.exe ./test_serial')
 
 
-def checkFPGAOutputs(outputStreamFileName="fpgaOut.txt", validStreamFileName="conv_valid_bytes.txt" ,expectedDim=518):
+def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileName="fpgaOut.txt",expectedDim=518):
 
     """ 
     This function validates the FPGA Outputs via: 
@@ -142,13 +142,14 @@ def checkFPGAOutputs(outputStreamFileName="fpgaOut.txt", validStreamFileName="co
         - Correlation computation using Scipy (to be implemented later)
 
     @param outputStreamFileName: string containing the bytes from the FPGA, default of "fpgaOut.txt"
-    @param expectedDim: the expected dimension size for the image (image_dim + zero padded layers)
-
-    To do: 
-        - handle image casting to 8-bits and correlation computation
-
+    @param expectedDim: int - the expected dimension size for the image (image_dim + zero padded layers)
+    @param input_image: NumPy matrix containing the preprocessed greyscale image sent to the FPGA
+    @param kernel_float: Numpy matrix containing double-precision kernel data
+    @param kernel_fixed: numpy matrix containing fixed-point int8 kernel data
     """
-    valid   = np.loadtxt(validStreamFileName, dtype=np.uint8)
+    valid_double = correlate2d(input_image,kernel_float,boundary='same')
+    valid_fixed = correlate2d(input_image,kernel_fixed,boundary='same')
+
     garbage = []
     
     expectedSize = expectedDim**2
@@ -158,6 +159,7 @@ def checkFPGAOutputs(outputStreamFileName="fpgaOut.txt", validStreamFileName="co
             x = f.readline()
             y = f.readline()
             if not y: break
+
             # Remove the endline characters 
             x = x.rstrip('\n')
             y = y.rstrip('\n')
@@ -178,12 +180,24 @@ def checkFPGAOutputs(outputStreamFileName="fpgaOut.txt", validStreamFileName="co
 
     # Reshape into image sizes 
     buf = np.reshape(buf, [expectedDim,expectedDim])
-    valid = np.reshape(valid, [512,512])
+
+    # Remove the zero padded layers from buf
+    num_pad_layers = int(kernel.shape[0]/2)
+    buf = buf[num_pad_layers:-num_pad_layers, num_pad_layers:-num_pad_layers]
 
     #Show output through OpenCV
-    cv2.imshow('Expected Output',valid)
+    cv2.imshow('Expected Output',valid_double)
     cv2.waitKey(0)
 
     cv2.imshow('Recieved Output',buf)
     cv2.waitKey(0)
 
+    # Compute the error between the FPGA Results and the fixed point convolution
+
+    err_double = np.absolute(buf-valid_double)
+    err_fixed = np.absolute(buf-valid_fixed)
+
+    print("Error between FPGA Result and double-precision convolution: {}".format(np.linalg.norm(err_double)))
+    print("Error between FPGA results and fixed-point convolution: {}".format(np.linalg.norm(err_fixed)))    
+
+    return (err_double, err_fixed)
