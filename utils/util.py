@@ -27,19 +27,19 @@ def image_rescale(image_path,dim):
 
     img = cv2.imread(image_path)
     grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    return cv2.resize(grey, [dim,dim])
+    return cv2.resize(grey, (dim,dim), interpolation=cv2.INTER_AREA)
 
 def generate_sobel(kernel_size):
 
     """
-    Creates a squar eSobel Edge-Detection filter to be used for image filtering on the FPGA
+    Creates a square Sobel Edge-Detection filter to be used for image filtering on the FPGA
     
     @param kernel_size: odd filter dimension 
 
     """
     kernel = np.zeros([kernel_size,kernel_size])
-    kernel[0:int(kernel_size/2),:] = -1 
-    kernel[int(kernel_size)+1:kernel_size,:] = 1
+    kernel[0:int(kernel_size/2),:] = 1 
+    kernel[int(kernel_size/2)+1:kernel_size,:] = 1
 
     return kernel
 
@@ -74,7 +74,22 @@ def quantize(image, kernel):
     """
 
     eng = matlab.engine.start_matlab()
-    return eng.fp_quantize(kernel, image)
+    eng.addpath('C:/Users/hkhaj/Documents/senior-project/deploy/utils/')
+
+    # MATLAB is dumb and can't process ndarrays directly, using a file-based workaround instead
+    np.savetxt('kernel.txt',kernel)
+    np.savetxt('image.txt',image)
+
+    image_matlab  = eng.importdata('image.txt')
+    kernel_matlab = eng.importdata('kernel.txt')
+    
+    fp_kernel, fp_image = eng.fp_quantize(kernel_matlab, image_matlab,nargout=2)
+
+    # Cast back to nparrays 
+    fp_image = np.asarray(fp_image, dtype=np.uint8)
+    fp_kernel = np.asarray(fp_kernel,dtype=np.uint8)
+
+    return [fp_kernel, fp_image]
 
 def createUARTStream(image,kernel,streamFileName):
 
@@ -88,14 +103,11 @@ def createUARTStream(image,kernel,streamFileName):
 
     """
 
-    stream = []
-
-    # Flatten and append to list, starting with kernel
-    stream.append(np.reshape(kernel,[kernel.shape[0]**2, 1]))
-    stream.append(np.reshape(image, [image.shape[0]**2, 1]))
+    # flatten and concatenate
+    stream = np.concatenate((np.ndarray.flatten(kernel),np.ndarray.flatten(image)))
     
-    x = np.array(stream,dtype=np.uint8)
-    np.savetxt(streamFileName,x)
+    x = np.asarray(stream,dtype=np.uint8)
+    np.savetxt(streamFileName,x,fmt='%u')
 
 def zeroPad(image,kernel_size):
 
@@ -122,17 +134,13 @@ def runFPGAConvolution(inputStreamFileName="uart_input_bytes.txt", cs_FileName="
         @param: outputStreamFileName: a path to the file containing the FPGA outputs
         @param: cs_FileName: a string designating the C# file to be compiled (should be testSerial.cs by default)
 
-    For future: 
-        - Replace File I/O with multiprocessing between Python and C# 
-
     Notes: 
         was having trouble getting C# cmd-line args to work so for now all the output files are "fpgaOut.txt", 
         this method ignores the outputStreamFileName param for now
 
     """
     os.system('powershell.exe csc {}'.format(cs_FileName))
-    os.system('powershell.exe ./test_serial')
-
+    os.system('C:/Users/hkhaj/Documents/senior-project/deploy/test_serial.exe')
 
 def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileName="fpgaOut.txt",expectedDim=518):
 
@@ -147,9 +155,9 @@ def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileNa
     @param kernel_float: Numpy matrix containing double-precision kernel data
     @param kernel_fixed: numpy matrix containing fixed-point int8 kernel data
     """
-    valid_double = correlate2d(input_image,kernel_float,boundary='same')
-    valid_fixed = correlate2d(input_image,kernel_fixed,boundary='same')
 
+    valid_double = correlate2d(input_image,kernel_float,'same')
+    valid_fixed = correlate2d(input_image,kernel_fixed,'same')
     garbage = []
     
     expectedSize = expectedDim**2
@@ -167,8 +175,8 @@ def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileNa
             garbage.append(x+y)
 
     # Casting to uint8 for now, cv2 crashes with int16
-    fpgaOut = np.array(garbage,dtype=np.uint8)
-    buf = np.zeros(shape=[expectedSize],dtype=np.uint8)
+    fpgaOut = np.array(garbage,dtype=np.int16)
+    buf = np.zeros(shape=[expectedSize],dtype=np.int16)
 
     # Adjust fpgaOut shape based on fpgaOut size
     if (fpgaOut.shape[0] < expectedSize):
@@ -182,15 +190,18 @@ def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileNa
     buf = np.reshape(buf, [expectedDim,expectedDim])
 
     # Remove the zero padded layers from buf
-    num_pad_layers = int(kernel.shape[0]/2)
+    num_pad_layers = int(kernel_fixed.shape[0]/2)
     buf = buf[num_pad_layers:-num_pad_layers, num_pad_layers:-num_pad_layers]
 
+    np.savetxt('buf.txt',buf,fmt='%16u')
     #Show output through OpenCV
     cv2.imshow('Expected Output',valid_double)
     cv2.waitKey(0)
 
     cv2.imshow('Recieved Output',buf)
     cv2.waitKey(0)
+
+    cv2.destroyAllWindows()
 
     # Compute the error between the FPGA Results and the fixed point convolution
 

@@ -30,6 +30,7 @@ public class SerialTest
         var    parity   = System.IO.Ports.Parity.None;
 
         SerialPort fpgaComPort = new SerialPort(portName,baudRate,parity,dataBits,stopBit); 
+        // fpgaComPort.Handshake = System.IO.Ports.Handshake.RequestToSend;
 
         // Helper Variables for serial r/w byte counting
         int numOutputsExpected = 518*518*2; 
@@ -58,6 +59,13 @@ public class SerialTest
 
         /* Send/Recieve Bytes from FPGA COM Ports */
         fpgaComPort.Open();
+        // fpgaComPort.Write("\n");
+
+        // Clean up the input/output buffers
+        fpgaComPort.DiscardInBuffer();
+        fpgaComPort.DiscardOutBuffer();
+        fpgaComPort.BaseStream.Flush();
+
         Stopwatch timer = new Stopwatch(); 
         timer.Start();
 
@@ -106,9 +114,11 @@ public class SerialTest
             numOutputsRecieved += bufData.Length; 
             Console.WriteLine("Total FPGA Outputs Recieved = {0}", numOutputsRecieved);
         }
+        fpgaComPort.Close();
 
         timer.Stop(); 
         Console.WriteLine("Execution Time: {0} ms", timer.ElapsedMilliseconds);
 
+        return; 
     }
 }
