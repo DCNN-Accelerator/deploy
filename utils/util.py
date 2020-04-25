@@ -1,8 +1,6 @@
 """
 Authors: Hussain Khajanchi and Paul Brodhead
-
 Helper functions for Image Processing with the FPGA-based DCNN Accelerator
-
 Includes modules for: 
     - Image resizing and color space conversion
     - Kernel Generation (sobel and identity, more to be added later)
@@ -35,7 +33,6 @@ def generate_sobel(kernel_size):
     Creates a square Sobel Edge-Detection filter to be used for image filtering on the FPGA
     
     @param kernel_size: odd filter dimension 
-
     """
     kernel = np.zeros([kernel_size,kernel_size])
     kernel[0:int(kernel_size/2),:] = 1 
@@ -47,7 +44,6 @@ def generate_identity(kernel_size):
 
     """
     Creates a square identity filter based on the kernel size parameter
-
     @param kernel_size: int specifying the kernel size
     Ex: 
     kernel_size = 3
@@ -66,10 +62,8 @@ def quantize(image, kernel):
     """
     Uses MATLAB to quantize the image and kernel values into the specified fixed-point precision
     Requires a Licensed MATLAB installation with the Fixed-Point Designer add on 
-
     @param image: a NumPy array containing the image 
     @param kernel: a numpy array containing kernel data
-
     Returns the quantized kernel and image
     """
 
@@ -96,11 +90,9 @@ def createUARTStream(image,kernel,streamFileName):
     """
     Creates a 1D stream containing kernel and image data and writes to a file
     Requires int8 quantized data
-
     @param image: numpy array containing image data
     @param kernel: numpy array containing kernel data
     @param streamFileName: string specifiying the filename that the stream should be written to 
-
     """
 
     # flatten and concatenate
@@ -115,7 +107,6 @@ def zeroPad(image,kernel_size):
     Takes the image, and zero pads it according to the kernel size
     @param image: nparray containing image data
     @param kernel_size: int containing the square size of the kernel
-
     """
     num_pad_zeros = int(kernel_size/2)
     return np.pad(image,((num_pad_zeros,num_pad_zeros),(num_pad_zeros,num_pad_zeros)),mode='constant')
@@ -128,16 +119,13 @@ def runFPGAConvolution(inputStreamFileName="uart_input_bytes.txt", cs_FileName="
     Given a stream path, this function compiles the C# program and invokes the executable
     
     This method will fail if the C# compiler is not part of the System Path
-
      
         @param: inputStreamFileName: a path to the file containing the 8-bit bytes to be streamed to the FPGA
         @param: outputStreamFileName: a path to the file containing the FPGA outputs
         @param: cs_FileName: a string designating the C# file to be compiled (should be testSerial.cs by default)
-
     Notes: 
         was having trouble getting C# cmd-line args to work so for now all the output files are "fpgaOut.txt", 
         this method ignores the outputStreamFileName param for now
-
     """
     os.system('powershell.exe csc {}'.format(cs_FileName))
     os.system('C:/Users/hkhaj/Documents/senior-project/deploy/test_serial.exe')
@@ -148,7 +136,6 @@ def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileNa
     This function validates the FPGA Outputs via: 
         - Visual Inspection through OpenCV 
         - Correlation computation using Scipy (to be implemented later)
-
     @param outputStreamFileName: string containing the bytes from the FPGA, default of "fpgaOut.txt"
     @param expectedDim: int - the expected dimension size for the image (image_dim + zero padded layers)
     @param input_image: NumPy matrix containing the preprocessed greyscale image sent to the FPGA
@@ -171,8 +158,15 @@ def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileNa
             # Remove the endline characters 
             x = x.rstrip('\n')
             y = y.rstrip('\n')
+            
+            #convert inputs to int 
+            x_int = int(x)
+            y_int = int(y)
+            
+            #combine two inputs in little endian format 
+            garbage_int = (x_int * 256) + y_int
 
-            garbage.append(x+y)
+            garbage = str(garbage_int)
 
     # Casting to uint8 for now, cv2 crashes with int16
     fpgaOut = np.array(garbage,dtype=np.int16)
