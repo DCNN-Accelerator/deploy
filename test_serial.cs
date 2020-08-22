@@ -72,6 +72,9 @@ public class SerialTest
         foreach(Byte outputByte in fpgaStream)
         {
             Byte[] writeByte = new byte [1];
+            Byte [] outputFileByte = new byte [1];
+            string hexStr;
+
             writeByte[0] = outputByte; 
 
             fpgaComPort.Write(writeByte,0,1);
@@ -86,7 +89,9 @@ public class SerialTest
 
             for (int j = 0; j < bufData.Length; j++)
             {
-                outputFile.WriteLine(bufData[j]);
+                outputFileByte[0] = bufData[j];
+                hexStr = BitConverter.ToString(outputFileByte).Replace("-", string.Empty);
+                outputFile.WriteLine(hexStr);
             }
 
             numOutputsRecieved += bufData.Length; 
@@ -99,16 +104,22 @@ public class SerialTest
 
         for (int p = 0; p < bytesRemaining; p++)
         {
-            System.Threading.Thread.Sleep(readInterval);
+            //System.Threading.Thread.Sleep(readInterval);
 
             Byte[] bufData = new byte [fpgaComPort.BytesToRead];
+            Byte[] thing = new byte[1];
+
+            string hexStr; 
             fpgaComPort.Read(bufData,0, bufData.Length);
 
             Console.WriteLine("Number of Bytes Recieved: {0}", bufData.Length);
 
             for (int s = 0; s < bufData.Length; s++)
             {
-                outputFile.WriteLine(bufData[s]);
+                thing[0] = bufData[s]; 
+
+                hexStr = BitConverter.ToString(thing).Replace("-", string.Empty);
+                outputFile.WriteLine(hexStr);
             }
 
             numOutputsRecieved += bufData.Length; 

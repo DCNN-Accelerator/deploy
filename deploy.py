@@ -52,7 +52,7 @@ if __name__ == "__main__":
     errors = []
 
     for path in pathsList:
-        actual_path = dir+path
+        actual_path = 'baby_yoda.jpeg'
 
         # Process image and generate kernel
         greyscale = image_rescale(actual_path,512)
@@ -72,8 +72,8 @@ if __name__ == "__main__":
         p.close()
 
         # call helper method for convolution verification and exit to main instance
-        errors.append(checkFPGAOutputs(greyscale,sobel,fp_kernel))
-
+        x = checkFPGAOutputs(greyscale,sobel)
+        np.savetxt('garbage.txt',x)
         # os.system('del *.exe')
         # os.system('del *.txt')
 

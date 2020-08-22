@@ -20,7 +20,7 @@ function [quant_kernel, quant_img] = fp_quantize(kernel, image)
 
     % Quantize to fixed-point using MATLAB's Fixed Point Designer
     % fi() creates a MATLAB fixed point object, which performs quantization based on the word length/fraction length parameters
-    fp_kernel = fi(kernel, 1, 8, 7); 
+    fp_kernel = fi(kernel, 1, 8, 0); 
     fp_image = fi(image, 0, 8, 0);
     
     % Return the 8-bit int values for Python processing

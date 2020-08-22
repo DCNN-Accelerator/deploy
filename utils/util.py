@@ -14,6 +14,7 @@ import matlab.engine
 from scipy.signal import correlate2d
 import numpy as np 
 import os
+import ctypes as ct
 
 
 def image_rescale(image_path,dim):
@@ -35,8 +36,8 @@ def generate_sobel(kernel_size):
     @param kernel_size: odd filter dimension 
     """
     kernel = np.zeros([kernel_size,kernel_size])
-    kernel[0:int(kernel_size/2),:] = 1 
-    kernel[int(kernel_size/2)+1:kernel_size,:] = 1
+    kernel[0:int(kernel_size/2),:] = 1
+    kernel[int(kernel_size/2)+1:kernel_size,:] = -1
 
     return kernel
 
@@ -111,6 +112,21 @@ def zeroPad(image,kernel_size):
     num_pad_zeros = int(kernel_size/2)
     return np.pad(image,((num_pad_zeros,num_pad_zeros),(num_pad_zeros,num_pad_zeros)),mode='constant')
 
+def twosComp (hex_str, num_bits=16):
+    """
+    Converts a hex string into a signed 16-bit integer
+    
+    @param hex_str: string containing the hexadecmimal value to be converted ex: '/FFAB'
+    @param num_bits: int specifying the base of the result (default is 16)
+    """
+
+    value = int(hex_str,16)
+    if value & (1 << (num_bits-1)):
+        value -= (1<<num_bits)
+    
+    return value 
+
+
 
 def runFPGAConvolution(inputStreamFileName="uart_input_bytes.txt", cs_FileName="test_serial.cs", outputStreamFileName="fpgaOut.txt"): 
 
@@ -130,7 +146,7 @@ def runFPGAConvolution(inputStreamFileName="uart_input_bytes.txt", cs_FileName="
     os.system('powershell.exe csc {}'.format(cs_FileName))
     os.system('C:/Users/hkhaj/Documents/senior-project/deploy/test_serial.exe')
 
-def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileName="fpgaOut.txt",expectedDim=518):
+def checkFPGAOutputs(input_image, kernel_float, kernel_fixed=None, outputStreamFileName="fpgaOut.txt",expectedDim=518):
 
     """ 
     This function validates the FPGA Outputs via: 
@@ -144,7 +160,8 @@ def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileNa
     """
 
     valid_double = correlate2d(input_image,kernel_float,'same')
-    valid_fixed = correlate2d(input_image,kernel_fixed,'same')
+    np.savetxt('expected.txt',np.ndarray.flatten(valid_double))
+    
     garbage = []
     
     expectedSize = expectedDim**2
@@ -159,17 +176,15 @@ def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileNa
             x = x.rstrip('\n')
             y = y.rstrip('\n')
             
-            #convert inputs to int 
-            x_int = int(x)
-            y_int = int(y)
-            
-            #combine two inputs in little endian format 
-            garbage_int = (x_int * 256) + y_int
+            #convert hex chars to int 
+            garbage_str = x+y
+            garbage_str = garbage_str.replace(" ","")
+            garbage_int = twosComp(garbage_str)
 
-            garbage = str(garbage_int)
+            garbage.append(garbage_int)
 
     # Casting to uint8 for now, cv2 crashes with int16
-    fpgaOut = np.array(garbage,dtype=np.int16)
+    fpgaOut = np.asarray(garbage,dtype=np.int16)
     buf = np.zeros(shape=[expectedSize],dtype=np.int16)
 
     # Adjust fpgaOut shape based on fpgaOut size
@@ -184,25 +199,25 @@ def checkFPGAOutputs(input_image, kernel_float, kernel_fixed, outputStreamFileNa
     buf = np.reshape(buf, [expectedDim,expectedDim])
 
     # Remove the zero padded layers from buf
-    num_pad_layers = int(kernel_fixed.shape[0]/2)
+    num_pad_layers = int(kernel_float.shape[0]/2)
     buf = buf[num_pad_layers:-num_pad_layers, num_pad_layers:-num_pad_layers]
 
-    np.savetxt('buf.txt',buf,fmt='%16u')
     #Show output through OpenCV
-    cv2.imshow('Expected Output',valid_double)
+    buf_normalized = cv2.normalize(buf,dst=None,alpha=-32768,beta=32767,norm_type=cv2.NORM_MINMAX)
+    valid_normalized = cv2.normalize(valid_double.astype(np.int16),dst=None,alpha=-32768,beta=32767,norm_type=cv2.NORM_MINMAX)
+
+    cv2.imshow('Original',input_image)
     cv2.waitKey(0)
 
-    cv2.imshow('Recieved Output',buf)
+    cv2.imshow('Expected Output',valid_normalized)
+    cv2.waitKey(0)
+
+    cv2.imshow('Recieved Output',buf_normalized)
     cv2.waitKey(0)
 
     cv2.destroyAllWindows()
 
-    # Compute the error between the FPGA Results and the fixed point convolution
-
-    err_double = np.absolute(buf-valid_double)
-    err_fixed = np.absolute(buf-valid_fixed)
-
-    print("Error between FPGA Result and double-precision convolution: {}".format(np.linalg.norm(err_double)))
-    print("Error between FPGA results and fixed-point convolution: {}".format(np.linalg.norm(err_fixed)))    
-
-    return (err_double, err_fixed)
+    cv2.imwrite('expected.jpeg',~valid_normalized)
+    cv2.imwrite('recieved.jpeg', ~buf_normalized)
+    cv2.imwrite('grey_input.jpeg', input_image)
+    return (buf)
